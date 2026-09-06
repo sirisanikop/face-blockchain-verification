@@ -26,3 +26,14 @@ tifffile==2026.8.23
 tqdm==4.70.0
 typing_extensions==4.16.0
 urllib3==2.7.0
+serpapi==1.1.0
+
+# --- Part 3: blockchain verification ---
+web3==7.16.0             # Ethereum interaction (pulls in eth-account, eth-abi, ...)
+py-solc-x==2.0.5         # compile blockchain/contract.sol from Python
+python-dotenv==1.2.3     # load .env (RPC_URL / PRIVATE_KEY / CONTRACT_ADDRESS)
+
+# Optional - only for the offline, no-testnet demo (`python -m blockchain.demo_local`
+# and `python pipeline.py` with no RPC_URL). Provides an in-process EVM.
+eth-tester==0.14.0b1
+py-evm==0.12.1b1

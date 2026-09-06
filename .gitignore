@@ -14,12 +14,10 @@ env/
 
 # Generated search results
 result.json
+results/
+__pycache__/
+*.pyc
 
-# Test images / private images
-test_images/
-
-# macOS
-.DS_Store
-
-# Generated output images
-output_images/
+# Part 3 (blockchain) - local artifacts
+blockchain_record.json
+.solcx/

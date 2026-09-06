@@ -181,7 +181,9 @@ def run_pipeline_fast(scan_image_path, max_workers=5):
 if __name__ == "__main__":
     import sys
 
-    scan_image = sys.argv[1] if len(sys.argv) > 1 else "test_images/test10.jpg"
+    # Usage:  python pipeline.py [path/to/scan_image.jpg]
+    # Defaults to the bundled sample if no path is given.
+    scan_image = sys.argv[1] if len(sys.argv) > 1 else "test_images/test7.jpg"
 
     if not os.path.isfile(scan_image):
         print(f"Image not found: {scan_image}")
