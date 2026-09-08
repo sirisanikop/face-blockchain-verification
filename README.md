@@ -19,6 +19,9 @@ The pipeline:
 9. Recomputes and compares the fingerprint during verification to detect tampering.
 
 ---
+## System Architecture
+
+![System Architecture](pipeline.jpg)
 
 # Part 1: Face Identification — `face_id.py`
 
