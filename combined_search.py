@@ -43,7 +43,7 @@ def get_serpapi_results(image_path):
 
 
 # ============================================================
-# GET IMAGE URL FROM SERPAPI RESULT
+# GET IMAGE URL
 # ============================================================
 
 def get_serpapi_image_url(item):
@@ -51,8 +51,8 @@ def get_serpapi_image_url(item):
     Get the actual image URL returned by SerpAPI.
 
     Priority:
-        1. image      -> full image URL
-        2. thumbnail  -> fallback if full image is unavailable
+        1. image
+        2. thumbnail
     """
 
     return (
@@ -63,44 +63,73 @@ def get_serpapi_image_url(item):
 
 
 # ============================================================
-# EXTRACT SERPAPI IMAGE URLS
+# EXTRACT SERPAPI CANDIDATES
 # ============================================================
 
-def extract_serpapi_urls(results):
+def extract_serpapi_candidates(results):
     """
-    Extract actual image URLs from SerpAPI results.
+    Extract BOTH:
 
-    These are used for the combined image-search output.
-    The webpage/source URL is NOT used unless an image URL
-    is unavailable.
+        image_url  -> image that will be downloaded/verified
+        source_url -> webpage containing/source of the image
+
+    This prevents the source webpage from being lost.
     """
 
-    urls = []
+    candidates = []
 
-    # -------------------------
+    # --------------------------------------------------------
     # Exact matches
-    # -------------------------
+    # --------------------------------------------------------
 
     for item in results.get("exact_matches", []):
 
         image_url = get_serpapi_image_url(item)
+        source_url = item.get("link", "")
 
         if image_url:
-            urls.append(image_url)
 
-    # -------------------------
+            candidates.append({
+                "image_url": image_url,
+                "source_url": source_url,
+                "title": item.get("title", ""),
+                "source": item.get("source", ""),
+                "category": "exact_match"
+            })
+
+    # --------------------------------------------------------
     # Visual matches
-    # -------------------------
+    # --------------------------------------------------------
 
     for item in results.get("visual_matches", []):
 
         image_url = get_serpapi_image_url(item)
+        source_url = item.get("link", "")
 
         if image_url:
-            urls.append(image_url)
 
-    # Remove duplicates while preserving order
-    return list(dict.fromkeys(urls))
+            candidates.append({
+                "image_url": image_url,
+                "source_url": source_url,
+                "title": item.get("title", ""),
+                "source": item.get("source", ""),
+                "category": "visual_match"
+            })
+
+    # --------------------------------------------------------
+    # Deduplicate using image URL
+    # --------------------------------------------------------
+
+    unique = {}
+
+    for candidate in candidates:
+
+        image_url = candidate["image_url"]
+
+        if image_url not in unique:
+            unique[image_url] = candidate
+
+    return list(unique.values())
 
 
 # ============================================================
@@ -111,13 +140,25 @@ def get_vision_results(image_path):
     """
     Run the existing Google Vision pipeline.
 
-    The existing get_candidate_urls() function is preserved.
+    Google Vision currently returns URLs only.
     """
 
     urls = get_candidate_urls(image_path)
 
+    candidates = []
+
+    for url in urls:
+
+        candidates.append({
+            "image_url": url,
+            "source_url": "",
+            "title": "",
+            "source": "Google Vision",
+            "category": "google_vision"
+        })
+
     return {
-        "candidate_urls": urls
+        "candidate_urls": candidates
     }
 
 
@@ -136,13 +177,11 @@ def get_all_results(image_path):
 
     with ThreadPoolExecutor(max_workers=2) as executor:
 
-        # Google Vision
         vision_future = executor.submit(
             get_vision_results,
             image_path
         )
 
-        # SerpAPI Google Lens
         serpapi_future = executor.submit(
             get_serpapi_results,
             image_path
@@ -174,11 +213,13 @@ def get_all_results(image_path):
 
                     serpapi_result = result
 
-                    serpapi_urls = extract_serpapi_urls(result)
+                    candidates = extract_serpapi_candidates(
+                        result
+                    )
 
                     print(
                         f"[SerpAPI Google Lens] completed: "
-                        f"{len(serpapi_urls)} candidate image URLs"
+                        f"{len(candidates)} candidate image URLs"
                     )
 
             except Exception as e:
@@ -217,31 +258,42 @@ def get_all_results(image_path):
         }
 
     # ========================================================
-    # GET RESULTS
+    # GET CANDIDATES
     # ========================================================
 
-    vision_urls = vision_result["candidate_urls"]
+    vision_candidates = vision_result["candidate_urls"]
 
-    serpapi_urls = extract_serpapi_urls(
+    serpapi_candidates = extract_serpapi_candidates(
         serpapi_result
     )
 
     # ========================================================
-    # COMBINE AND DEDUPLICATE
+    # COMBINE + DEDUPLICATE
     # ========================================================
 
-    combined = list(
-        dict.fromkeys(
-            vision_urls + serpapi_urls
-        )
-    )
+    combined = []
+
+    seen_images = set()
+
+    for candidate in (
+        vision_candidates + serpapi_candidates
+    ):
+
+        image_url = candidate["image_url"]
+
+        if image_url not in seen_images:
+
+            seen_images.add(image_url)
+
+            combined.append(candidate)
 
     return {
+
         "google_vision": vision_result,
 
         "serpapi_google_lens": serpapi_result,
 
-        "combined_candidate_urls": combined,
+        "combined_candidates": combined,
 
         "errors": {
             "google_vision": vision_error,
@@ -260,11 +312,7 @@ def print_results(image_path, results):
 
     serpapi = results["serpapi_google_lens"]
 
-    combined = results["combined_candidate_urls"]
-
-    # ========================================================
-    # HEADER
-    # ========================================================
+    combined = results["combined_candidates"]
 
     print("\n")
     print("========================================")
@@ -274,7 +322,7 @@ def print_results(image_path, results):
     print(f"\nImage: {image_path}")
 
     # ========================================================
-    # GOOGLE VISION SUMMARY
+    # GOOGLE VISION
     # ========================================================
 
     print("\n[Google Vision]")
@@ -285,7 +333,7 @@ def print_results(image_path, results):
     )
 
     # ========================================================
-    # SERPAPI SUMMARY
+    # SERPAPI
     # ========================================================
 
     print("\n[SerpAPI Google Lens]")
@@ -300,13 +348,17 @@ def print_results(image_path, results):
         f"{len(serpapi['exact_matches'])}"
     )
 
+    serpapi_candidates = extract_serpapi_candidates(
+        serpapi
+    )
+
     print(
         f"Candidate Image URLs: "
-        f"{len(extract_serpapi_urls(serpapi))}"
+        f"{len(serpapi_candidates)}"
     )
 
     # ========================================================
-    # RESULT SUMMARY
+    # SUMMARY
     # ========================================================
 
     print("\n")
@@ -321,7 +373,7 @@ def print_results(image_path, results):
 
     print(
         f"SerpAPI Image URLs: "
-        f"{len(extract_serpapi_urls(serpapi))}"
+        f"{len(serpapi_candidates)}"
     )
 
     print(
@@ -330,7 +382,7 @@ def print_results(image_path, results):
     )
 
     # ========================================================
-    # SERPAPI GOOGLE LENS RESULTS
+    # SERPAPI RESULTS
     # ========================================================
 
     print("\n")
@@ -338,84 +390,23 @@ def print_results(image_path, results):
     print("       SERPAPI GOOGLE LENS RESULTS")
     print("========================================")
 
-    # ========================================================
-    # VISUAL MATCHES
-    # ========================================================
-
-    print("\n--- Visual Matches ---")
-
-    if serpapi["visual_matches"]:
-
-        for i, item in enumerate(
-            serpapi["visual_matches"],
-            1
-        ):
-
-            title = item.get(
-                "title",
-                "No title"
-            )
-
-            source = item.get(
-                "source",
-                "Unknown source"
-            )
-
-            # IMPORTANT:
-            # Get the actual image URL,
-            # NOT the webpage URL.
-            image_url = get_serpapi_image_url(
-                item
-            )
-
-            # Keep webpage URL separately
-            website_url = item.get(
-                "link",
-                ""
-            )
-
-            print(f"\n{i}. {title}")
-
-            print(
-                f"   Source: {source}"
-            )
-
-            if image_url:
-
-                print(
-                    f"   Image: {image_url}"
-                )
-
-            else:
-
-                print(
-                    "   Image: Not available"
-                )
-
-            if website_url:
-
-                print(
-                    f"   Website: {website_url}"
-                )
-
-    else:
+    for category in [
+        "visual_matches",
+        "exact_matches"
+    ]:
 
         print(
-            "No visual matches found."
+            f"\n--- {category.replace('_', ' ').title()} ---"
         )
 
-    # ========================================================
-    # EXACT MATCHES
-    # ========================================================
+        items = serpapi.get(category, [])
 
-    print("\n--- Exact Matches ---")
+        if not items:
 
-    if serpapi["exact_matches"]:
+            print("No results found.")
+            continue
 
-        for i, item in enumerate(
-            serpapi["exact_matches"],
-            1
-        ):
+        for i, item in enumerate(items, 1):
 
             title = item.get(
                 "title",
@@ -448,26 +439,14 @@ def print_results(image_path, results):
                     f"   Image: {image_url}"
                 )
 
-            else:
-
-                print(
-                    "   Image: Not available"
-                )
-
             if website_url:
 
                 print(
                     f"   Website: {website_url}"
                 )
 
-    else:
-
-        print(
-            "No exact matches found."
-        )
-
     # ========================================================
-    # GOOGLE VISION RESULTS
+    # GOOGLE VISION
     # ========================================================
 
     print("\n")
@@ -475,15 +454,13 @@ def print_results(image_path, results):
     print("       GOOGLE VISION RESULTS")
     print("========================================")
 
-    print("\n--- Candidate URLs ---")
-
-    for i, url in enumerate(
+    for i, candidate in enumerate(
         vision["candidate_urls"],
         1
     ):
 
         print(
-            f"{i}. {url}"
+            f"{i}. {candidate['image_url']}"
         )
 
     # ========================================================
@@ -529,8 +506,8 @@ def save_results(results, image_path):
         "serpapi_google_lens":
             results["serpapi_google_lens"],
 
-        "combined_candidate_urls":
-            results["combined_candidate_urls"],
+        "combined_candidates":
+            results["combined_candidates"],
 
         "errors":
             results["errors"]
@@ -562,7 +539,6 @@ if __name__ == "__main__":
     if len(sys.argv) != 2:
 
         print("Usage:")
-
         print(
             "python combined_search.py "
             "test_images/test4.jpg"
@@ -580,18 +556,15 @@ if __name__ == "__main__":
 
         sys.exit(1)
 
-    # Run both Google Vision and SerpAPI
     results = get_all_results(
         image_path
     )
 
-    # Print results
     print_results(
         image_path,
         results
     )
 
-    # Save JSON
     save_results(
         results,
         image_path
