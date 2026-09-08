@@ -1047,7 +1047,7 @@ if __name__ == "__main__":
 
         if len(sys.argv) > 1
 
-        else "test_images/test2.jpg"
+        else "test_images/test3.jpg"
     )
 
     if not os.path.isfile(
