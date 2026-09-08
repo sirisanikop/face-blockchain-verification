@@ -21,7 +21,7 @@ The pipeline:
 ---
 ## System Architecture
 
-![System Architecture](pipeline.jpg)
+![System Architecture](pipelineimage.jpg)
 
 # Part 1: Face Identification — `face_id.py`
 
